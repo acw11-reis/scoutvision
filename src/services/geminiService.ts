@@ -3,7 +3,54 @@ import { Player, AIAnalysisResponse, AIScoutingResponse } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-export const analyzePlayerFit = async (player: Player, systemDescription: string): Promise<AIAnalysisResponse> => {
+export const getRealPlayerData = async (playerName: string): Promise<Partial<Player>> => {
+  const prompt = `
+    Find the most famous professional football player matching the name "${playerName}".
+    Return their current real-world profile details as of today.
+    
+    Data required:
+    - Full Name
+    - Country of Citizenship
+    - Date of Birth (YYYY-MM-DD)
+    - Current Team (Club)
+    - Primary Position (Must be one of: Goalkeeper, Center Back, Left Back, Right Back, Defensive Midfielder, Center Midfielder, Attacking Midfielder, Left Winger, Right Winger, Striker)
+    - Approximate Market Value in Millions of Euros (Number only, e.g. 180 for 180M)
+
+    If the player is not found or ambiguous, return null for fields.
+  `;
+
+  try {
+     const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            country: { type: Type.STRING },
+            dob: { type: Type.STRING },
+            team: { type: Type.STRING },
+            position: { type: Type.STRING },
+            marketValue: { type: Type.NUMBER }
+          },
+          required: ["name", "country", "dob", "team", "position", "marketValue"]
+        }
+      }
+    });
+    
+    if (response.text) {
+        return JSON.parse(response.text);
+    }
+    throw new Error("No data found");
+  } catch (e) {
+      console.error(e);
+      throw e;
+  }
+}
+
+export const analyzePlayerFit = async (player: Player, systemDescription: string, additionalInfo: string = ''): Promise<AIAnalysisResponse> => {
   const age = new Date().getFullYear() - new Date(player.dob).getFullYear();
 
   const prompt = `
@@ -11,7 +58,7 @@ export const analyzePlayerFit = async (player: Player, systemDescription: string
     
     Analyze the following player for the specified tactical system.
     
-    **Player Profile:**
+    **Target Player Profile:**
     - Name: ${player.name}
     - Age: ${age}
     - Position: ${player.position}
@@ -22,7 +69,15 @@ export const analyzePlayerFit = async (player: Player, systemDescription: string
     **Target System/Tactical Requirement:**
     ${systemDescription}
 
-    Provide a strict, objective analysis of how well this player fits the requested system based on their general profile typical of players in that position and market value bracket.
+    **Additional Context / Specific Matchup Info:**
+    ${additionalInfo || "No additional context provided."}
+
+    **Analysis Instructions:**
+    1. **REAL WORLD KNOWLEDGE**: If "${player.name}" is a known professional footballer, use your internal knowledge of their *actual* playing style, recent form, injury history, and specific traits (e.g. Haaland's physical dominance, Messi's vision) to inform the analysis. Do not rely solely on the generic stats above.
+    2. **Synthesize**: Combine the provided profile with your real-world knowledge.
+    3. **Evaluate**: strictly assess how they fit the "Target System" and "Additional Context".
+    4. **Verdict**: Be critical. If a player is expensive but doesn't fit the system, say so.
+
     Return the response in JSON format.
   `;
 

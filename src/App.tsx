@@ -19,9 +19,10 @@ import {
   Radar,
   Target,
   Filter,
-  CheckCircle2
+  CheckCircle2,
+  Wand2
 } from 'lucide-react';
-import { analyzePlayerFit, generateScoutingShortlist } from './services/geminiService';
+import { analyzePlayerFit, generateScoutingShortlist, getRealPlayerData } from './services/geminiService';
 import { Player, Position, ScoutingReport, Recommendation } from './types';
 
 // --- Types & Mock Data ---
@@ -287,9 +288,11 @@ export default function App() {
   
   // Form State
   const [formData, setFormData] = useState<Partial<Player>>({});
+  const [autoFillLoading, setAutoFillLoading] = useState(false);
   
   // Analysis State
   const [systemDescription, setSystemDescription] = useState('');
+  const [additionalInfo, setAdditionalInfo] = useState('');
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<ScoutingReport | null>(null);
 
@@ -303,6 +306,21 @@ export default function App() {
   const showNotification = (msg: string) => {
     setNotification(msg);
     setTimeout(() => setNotification(null), 3000);
+  };
+
+  const handleAutoFill = async () => {
+    if (!formData.name) return;
+    setAutoFillLoading(true);
+    try {
+        const realData = await getRealPlayerData(formData.name);
+        setFormData(prev => ({ ...prev, ...realData }));
+        showNotification("Player Data Auto-Filled");
+    } catch (error) {
+        console.error(error);
+        alert("Could not find player data. Check name or API Key.");
+    } finally {
+        setAutoFillLoading(false);
+    }
   };
 
   // CRUD Operations
@@ -358,6 +376,7 @@ export default function App() {
     setAnalyzingPlayer(player);
     setAnalysisResult(null);
     setSystemDescription('');
+    setAdditionalInfo('');
     setIsAnalysisModalOpen(true);
   };
 
@@ -365,7 +384,7 @@ export default function App() {
     if (!analyzingPlayer || !systemDescription) return;
     setAnalysisLoading(true);
     try {
-      const result = await analyzePlayerFit(analyzingPlayer, systemDescription);
+      const result = await analyzePlayerFit(analyzingPlayer, systemDescription, additionalInfo);
       setAnalysisResult({
         playerId: analyzingPlayer.id,
         system: systemDescription,
@@ -701,12 +720,24 @@ export default function App() {
           <div className="space-y-5">
             <div>
               <label className="block text-xs uppercase text-slate-500 font-bold mb-1.5 ml-1">Full Name</label>
-              <input 
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all placeholder:text-slate-600"
-                value={formData.name || ''} 
-                onChange={e => setFormData({...formData, name: e.target.value})}
-                placeholder="e.g. Kylian Mbappé"
-              />
+              <div className="relative flex gap-2">
+                <input 
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all placeholder:text-slate-600"
+                    value={formData.name || ''} 
+                    onChange={e => setFormData({...formData, name: e.target.value})}
+                    placeholder="e.g. Kylian Mbappé"
+                />
+                <button 
+                    onClick={handleAutoFill}
+                    disabled={autoFillLoading || !formData.name}
+                    className="bg-emerald-500/10 hover:bg-emerald-500 hover:text-white text-emerald-400 border border-emerald-500/30 rounded-xl px-4 flex items-center gap-2 font-bold text-xs uppercase tracking-wide transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Auto-fill data with AI"
+                >
+                    {autoFillLoading ? <div className="w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin"></div> : <Wand2 size={18} />}
+                    <span className="hidden sm:inline">Auto-Fill</span>
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1 ml-1">Tip: Type a famous player's name and click Auto-Fill.</p>
             </div>
             <div className="grid grid-cols-2 gap-5">
               <div>
@@ -814,12 +845,26 @@ export default function App() {
                         Target System & Tactical Role
                     </label>
                     <textarea 
-                      className="w-full h-40 bg-slate-950 border border-slate-800 rounded-xl p-4 text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none resize-none leading-relaxed placeholder:text-slate-700"
+                      className="w-full h-32 bg-slate-950 border border-slate-800 rounded-xl p-4 text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none resize-none leading-relaxed placeholder:text-slate-700"
                       placeholder="Describe your tactical setup (e.g., High-pressing 4-3-3) and what you need from this player..."
                       value={systemDescription}
                       onChange={e => setSystemDescription(e.target.value)}
                     />
                   </div>
+                  
+                  <div>
+                    <label className="block text-sm text-blue-400 font-semibold mb-3 flex items-center gap-2">
+                        <ListIcon size={16} />
+                        Additional Context (Optional)
+                    </label>
+                    <textarea 
+                      className="w-full h-24 bg-slate-950 border border-slate-800 rounded-xl p-4 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none resize-none leading-relaxed placeholder:text-slate-700"
+                      placeholder="E.g., Playing against a deep block, or need leadership qualities. AI will use real-world knowledge if player is famous."
+                      value={additionalInfo}
+                      onChange={e => setAdditionalInfo(e.target.value)}
+                    />
+                  </div>
+
                   <button 
                     onClick={handleAnalyze}
                     disabled={analysisLoading || !systemDescription}
